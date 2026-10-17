@@ -1,0 +1,15 @@
+# editor and OS noise
+*~
+*.swp
+.DS_Store
+Thumbs.db
+
+# local scratch
+tmp/
+*.tmp
+*.log
+
+# conversion leftovers, the tooling should clean up after itself but just in case
+*.DV-MP4.mp4
+*.hevc
+RPU.bin
