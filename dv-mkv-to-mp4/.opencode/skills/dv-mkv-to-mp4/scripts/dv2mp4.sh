@@ -257,7 +257,8 @@ if [[ $PROBE -eq 1 ]]; then
 fi
 
 SRC_BYTES=$(stat -c%s "$INPUT" 2>/dev/null || printf '0')
-note "reading the video stream${PROBE_HINT}"
+SRC_HUMAN="$(awk -v b="$SRC_BYTES" 'BEGIN { if (b > 1073741824) printf "%.1f GB", b/1073741824; else printf "%.0f MB", b/1048576 }')"
+note "reading the video stream${PROBE_HINT} (source $SRC_HUMAN)"
 
 if [[ "$VCOUNT" -ge 2 ]]; then
   note "dual layer video detected, using the profile 7 path"

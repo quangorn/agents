@@ -10,42 +10,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Find the scripts
-        id: scripts
-        run: |
-          find . -name '*.sh' -not -path './.git/*' | tee scripts.txt
-      - name: Syntax check
-        run: |
-          while read -r f; do
-            echo "bash -n $f"
-            bash -n "$f"
-          done < scripts.txt
-      - name: shellcheck
-        run: |
-          status=0
-          while read -r f; do
-            echo "::group::shellcheck $f"
-            shellcheck -S warning "$f" || status=1
-            echo "::endgroup::"
-          done < scripts.txt
-          exit $status
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@v2
+        with:
+          severity: warning
+          # The action finds shell files by their shebang, install.sh is
+          # included explicitly so it is checked even if the detection misses it.
+          additional_files: 'dv-mkv-to-mp4/install.sh'
 
-  markdown:
+  syntax:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check the license file is the real GPL-3.0
+      - name: Parse every shell script
+        run: |
+          find . -name '*.sh' -not -path './.git/*' -print | while read -r f; do
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+
+  repo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The license file is the real GPL-3.0
         run: |
           grep -q "GNU GENERAL PUBLIC LICENSE" LICENSE
           grep -q "Version 3, 29 June 2007" LICENSE
           grep -q "END OF TERMS AND CONDITIONS" LICENSE
-      - name: Every skill has its manifest
+      - name: Every skill has a usable manifest
         run: |
           find . -path './.git' -prune -o -name 'SKILL.md' -print | while read -r f; do
             echo "checking $f"
             head -1 "$f" | grep -q '^---$'
             grep -q '^name:' "$f"
             grep -q '^description:' "$f"
+            # the skill must live in a folder named after the skill id
+            id="$(basename "$(dirname "$f")")"
+            grep -q "^name: .*" "$f"
+            echo "  skill id: $id"
+          done
+      - name: Shell scripts are committed with LF endings
+        run: |
+          find . -name '*.sh' -not -path './.git/*' -print | while read -r f; do
+            if grep -q $'\r' "$f"; then
+              echo "::error file=$f has CRLF line endings"
+              exit 1
+            fi
           done
