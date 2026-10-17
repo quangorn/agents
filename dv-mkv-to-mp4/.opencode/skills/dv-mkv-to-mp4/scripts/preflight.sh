@@ -42,9 +42,9 @@ fi
 printf '\ntemp directory:\n'
 TMPROOT="${DV2MP4_TMP:-$HOME/tmp}"
 if mkdir -p "$TMPROOT" 2>/dev/null && [[ -w "$TMPROOT" ]]; then
-  printf '  OK      %-16s %s\n' "~/tmp" "$(cd "$TMPROOT" && df -h . | tail -1 | awk '{print $2, "free:", $4}')"
+  printf '  OK      %-16s %s\n' "temp dir" "$TMPROOT ($(cd "$TMPROOT" && df -h . | tail -1 | awk '{print $2, "free:", $4}'))"
 else
-  printf '  MISSING %-16s cannot create $TMPROOT\n' "~/tmp"
+  printf '  MISSING %-16s cannot create %s\n' "temp dir" "$TMPROOT"
   MISSING+=("tmpdir")
 fi
 

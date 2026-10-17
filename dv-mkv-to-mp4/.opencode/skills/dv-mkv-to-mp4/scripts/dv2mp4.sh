@@ -186,6 +186,7 @@ WORK="$(mktemp -d "$TMP_PARENT/dv2mp4.XXXXXXXX")" || die "cannot create work dir
 WORK_WIN="$(winpath "$WORK")"
 mkdir -p "$WORK_WIN" 2>/dev/null
 
+# shellcheck disable=SC2329  # invoked through the EXIT trap below
 cleanup() {
   local rc=$?
   if [[ $KEEP_TMP -eq 1 ]]; then
@@ -193,7 +194,7 @@ cleanup() {
   else
     rm -rf "$WORK"
   fi
-  return $rc
+  return "$rc"
 }
 trap cleanup EXIT
 

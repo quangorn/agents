@@ -10,13 +10,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: ShellCheck
-        uses: ludeeus/action-shellcheck@v2
-        with:
-          severity: warning
-          # The action finds shell files by their shebang, install.sh is
-          # included explicitly so it is checked even if the detection misses it.
-          additional_files: 'dv-mkv-to-mp4/install.sh'
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Find the scripts
+        id: scripts
+        run: |
+          find . -name '*.sh' -not -path './.git/*' | tee scripts.txt
+      - name: shellcheck
+        run: |
+          status=0
+          while read -r f; do
+            echo "::group::shellcheck $f"
+            out="$(shellcheck -S warning --format=gcc "$f" 2>&1)" || status=1
+            echo "$out"
+            # Publish the findings as annotations so they show up in the pull
+            # request view instead of only in the raw log.
+            while IFS= read -r line; do
+              [ -n "$line" ] || continue
+              file="${line%%:*}"
+              rest="${line#*:}"
+              lno="${rest%%:*}"
+              case "$rest" in
+                *" error:"*) sev="error" ;;
+                *)            sev="warning" ;;
+              esac
+              msg="$(printf '%s' "$rest" | sed -E 's/^[0-9]+:[0-9]+: //')"
+              echo "::$sev file=$file,line=$lno::$msg"
+            done <<< "$out"
+            echo "::endgroup::"
+          done < scripts.txt
+          exit $status
 
   syntax:
     runs-on: ubuntu-latest
