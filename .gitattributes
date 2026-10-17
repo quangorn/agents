@@ -1,0 +1,11 @@
+# The scripts in this repository are shell scripts and must keep LF endings.
+# Without this, a Windows clone with core.autocrlf=true checks them out with
+# CRLF and bash refuses to parse them.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.jsonc text eol=lf
+*.json text eol=lf
+LICENSE text eol=lf
