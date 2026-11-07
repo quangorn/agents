@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the dv-mkv-to-mp4 skill into the opencode skills directory.
+# Install the video-convert skill into the opencode skills directory.
 #
 #   bash install.sh              install into ~/.config/opencode/skills
 #   bash install.sh /some/dir    install into /some/dir/skills
@@ -7,7 +7,7 @@
 # The skill is copied, not moved, so the repository keeps working as a clone.
 set -uo pipefail
 
-SKILL_ID="dv-mkv-to-mp4"
+SKILL_ID="video-convert"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE="$HERE/.opencode/skills/$SKILL_ID"
 

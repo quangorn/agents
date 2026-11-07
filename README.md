@@ -11,7 +11,8 @@ so it can be read, copied and adapted freely.
 
 | Project | What it does |
 |---------|--------------|
-| [dv-mkv-to-mp4](dv-mkv-to-mp4/) | Converts a Dolby Vision MKV into a Dolby Vision MP4 that plays on LG OLED, Nvidia Shield and other DV capable players. The video bitstream is never re-encoded, so the result is bit exact. |
+| [video-convert](video-convert/) | Converts batches and whole seasons for Plex and an LG OLED: fixed HEVC NVENC flag set, copy-sets, audio ladder to E-AC-3, subtitle sidecar vs burn-in, Dolby Vision MP4 mode. |
+| [ass-to-srt](ass-to-srt/) | Converts ASS/SSA subtitle files and subtitle archives into styled SRT. |
 
 ## Using the skills
 
@@ -22,7 +23,7 @@ skill is discovered from the project scope, no configuration needed:
 
 ```bash
 git clone git@github.com:quangorn/agents.git
-cd agents/dv-mkv-to-mp4
+cd agents/video-convert
 opencode
 ```
 
@@ -30,7 +31,7 @@ opencode
 available in every project:
 
 ```bash
-bash dv-mkv-to-mp4/install.sh
+bash video-convert/install.sh
 ```
 
 The script copies the skill to `~/.config/opencode/skills/<skill-id>` and
@@ -62,9 +63,9 @@ agents/
 
 ## Requirements
 
-The skills in this repository generally drive command line tools. They check for
-what they need with a preflight script and report the exact list of what is
-missing instead of failing halfway through a job. See the README of each
+The skills in this repository generally drive command line tools. Some skills
+check their tools with a preflight script and report exactly what is missing;
+ass-to-srt needs only python3 (plus 7z for `.7z`). See the README of each
 project for its own requirements.
 
 ## License

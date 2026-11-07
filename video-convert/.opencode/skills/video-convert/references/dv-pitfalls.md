@@ -4,6 +4,32 @@ Every item here was hit for real while building this skill on this machine
 (Windows + Cygwin bash, ffmpeg 4.4, GPAC 26.03-DEV, dovi_tool 2.0.3,
 MKVToolNix 74, mediainfo 22.12). Do not "simplify" any of them away.
 
+This file feeds the Dolby Vision mode of the `video-convert` skill, the script
+`scripts/dv.sh`. It is carried over verbatim from the retired `dv-mkv-to-mp4`
+skill: every mention of `dv2mp4.sh` below is the same script, now named `dv.sh`.
+Item 14 (the AC-3 640 kbit/s cap) stays as recorded fact; the dv.sh audio ladder
+no longer encodes to AC-3 at all, it targets E-AC-3 1024 kbit/s for 5.1.
+
+## 0. Never edit this script while it is running
+
+A real run failed with:
+
+```
+dv2mp4.sh: строка 582: синтаксическая ошибка рядом с неожиданным маркером «(»
+dv2mp4.sh: строка 582: `    die "verification failed: ... (output removed)"'
+```
+
+The script itself was fine: `bash -n` passed and the same block ran cleanly in
+isolation. The mtime showed the file had been saved *during* the run, a couple
+of minutes after it started. bash reads a script lazily, one command at a
+time, so a file that changes under it makes the parser resume at the wrong
+offset and produce a syntax error pointing at a line that is perfectly valid
+in the file on disk. It fails on a random line, and the quoted line looks
+innocent, which is what makes it so confusing.
+
+Check `stat -c %y dv2mp4.sh` when this happens. The fix is operational, not in
+the script: do not save an edit to a running conversion.
+
 ## 1. GPAC renamed `dv-profile` to `dvp` and now demands a compatibility ID
 
 The upstream dvmkv2mp4 script uses:

@@ -13,3 +13,7 @@ tmp/
 *.DV-MP4.mp4
 *.hevc
 RPU.bin
+
+# python byte-code from the ass-to-srt scripts
+__pycache__/
+*.pyc

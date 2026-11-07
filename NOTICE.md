@@ -4,11 +4,11 @@
 
 ### dvmkv2mp4
 
-The conversion workflow in `dv-mkv-to-mp4` follows the approach introduced by
-[gacopl/dvmkv2mp4](https://github.com/gacopl/dvmkv2mp4): extract the HEVC
-elementary stream from the Matroska container, keep the Dolby Vision RPU inside
-it, and mux the result with GPAC's MP4Box while signalling the Dolby Vision
-profile.
+The Dolby Vision conversion mode in `video-convert` follows the approach
+introduced by [gacopl/dvmkv2mp4](https://github.com/gacopl/dvmkv2mp4): extract
+the HEVC elementary stream from the Matroska container, keep the Dolby Vision
+RPU inside it, and mux the result with GPAC's MP4Box while signalling the
+Dolby Vision profile.
 
 That project states in its README that it is released under the GPLv3. The
 scripts in this repository were written from scratch, but they reuse the same
@@ -18,8 +18,8 @@ under the GPL-3.0 as well and credits the original author.
 ### dovi_tool
 
 Dolby Vision RPU extraction and inspection is done with
-[dovi_tool](https://github.com/quietvoid/dovi_tool) by quietvoid. `dovi_tool` is
-not included in this repository and is not modified by it.
+[dovi_tool](https://github.com/quietvoid/dovi_tool) by quietvoid. `dovi_tool`
+is not included in this repository and is not modified by it.
 
 ### GPAC, FFmpeg, MKVToolNix, MediaInfo
 
