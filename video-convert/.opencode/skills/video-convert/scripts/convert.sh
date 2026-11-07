@@ -144,11 +144,16 @@ if [[ -n "$AIDS" ]]; then WANT_A=" ${AIDS//,/ } "; else WANT_A=" $AIDS_AVAIL "; 
 if [[ -n "$SIDS" ]]; then WANT_S=" ${SIDS//,/ } "; else WANT_S=" $SIDS_AVAIL "; fi
 
 # Video copy-set (SKILL.md §3): hevc Main/Main10 at <=10 bits and <=3840x2160,
-# h264, mpeg2video, mpeg4, av1, vp8, vp9. WMV2 and everything else is re-encoded.
+# h264 at 8 bits only, mpeg2video, mpeg4, av1, vp8, vp9. WMV2 and everything
+# else is re-encoded. LG OLED does not decode 10-bit H.264 (High 10 profile),
+# so a 10-bit h264 stream must be re-encoded, never copied (TV-verified).
 video_in_copyset() {
   local codec="$1" prof="$2" pix="$3" w="${4:-0}" h="${5:-0}" bps="${6:-0}" bits=8
   case "$codec" in
-    h264|mpeg2video|mpeg4|av1|vp8|vp9) return 0 ;;
+    h264)
+      printf '%s' "$pix" | grep -q '10[lb]e' && return 1
+      return 0 ;;
+    mpeg2video|mpeg4|av1|vp8|vp9) return 0 ;;
     hevc)
       case "$prof" in Main|"Main 10"|"Main 10 Pro"|Main10*) ;; *) return 1 ;; esac
       [[ "$bps" =~ ^[0-9]+$ ]] && bits="$bps"

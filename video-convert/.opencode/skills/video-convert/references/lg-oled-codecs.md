@@ -12,15 +12,16 @@
 | поток | проверенный результат | правило в скилле |
 |---|---|---|
 | HEVC Main / Main10 (≤10 бит, ≤3840x2160) | direct play | целевой кодек |
-| H.264 | direct play | copy |
+| H.264 | direct play (8 бит); **High10 (10 бит) на ТВ не играется** | copy только 8-битный; High10 → перекодировать в HEVC |
 | MPEG-2, MPEG-4 | direct play (заявлены клиентом: `add-transcode-target videoCodec=h264,hevc,mpeg2video,mpeg4`) | copy |
 | AV1, VP8, VP9 | игрались | copy |
 | Dolby Vision | отдельный режим | §5 SKILL.md (DV-режим, MP4) |
 | WMV2 (`.wmv`) | **не проигрался вообще** (36 retries) | перекодировать |
 | всё остальное | — | перекодировать в HEVC (фиксированный набор) |
 
-**copy-набор видео**: `hevc` (Main/Main10, ≤10 бит, ≤3840x2160), `h264`,
-`mpeg2video`, `mpeg4`, `av1`, `vp8`, `vp9`.
+**copy-набор видео**: `hevc` (Main/Main10, ≤10 бит, ≤3840x2160), `h264`
+(**только 8 бит** — High10 не играется на TV, проверено), `mpeg2video`,
+`mpeg4`, `av1`, `vp8`, `vp9`.
 
 ## Аудио (лесенка)
 

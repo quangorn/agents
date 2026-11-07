@@ -1,6 +1,6 @@
 ---
 name: video-convert
-description: Use when the user wants video files or a whole season of a series converted with ffmpeg for Plex and an LG OLED TV — «конвертни сериал», «пересохраните сезон в HEVC», «сделай MKV из этой папки», «конвертни фильм для Plex/TV», «сконвертируй сезон для телевизора», batch convert, remux a season. Fixed HEVC NVENC flag set (preset p4, cq 10, maxrate 200M/bufsize 100M), video copy-set (hevc/h264/mpeg2/mpeg4/av1/vp8/vp9), audio ladder that copies ac3/eac3/aac/mp3/vorbis/opus/pcm/flac at ≤6 channels and downmixes anything over 6 channels to E-AC-3 5.1, DTS never copied; subtitles as ASS→SRT sidecar, burn-in with -vf subtitles=, or PGS kept embedded; Dolby Vision as a mode that outputs MP4 through dovi_tool; Plex library layout and refresh. Output is MKV (MP4 only for DV), sources are read-only, one ffmpeg process at a time.
+description: Use when the user wants video files or a whole season of a series converted with ffmpeg for Plex and an LG OLED TV — «конвертни сериал», «пересохраните сезон в HEVC», «сделай MKV из этой папки», «конвертни фильм для Plex/TV», «сконвертируй сезон для телевизора», batch convert, remux a season. Fixed HEVC NVENC flag set (preset p4, cq 10, maxrate 200M/bufsize 100M), video copy-set (hevc Main/Main10 ≤10bit, h264 8-bit only, mpeg2/mpeg4, av1/vp8/vp9), audio ladder that copies ac3/eac3/aac/mp3/vorbis/opus/pcm/flac at ≤6 channels and downmixes anything over 6 channels to E-AC-3 5.1, DTS never copied; subtitles as ASS→SRT sidecar, burn-in with -vf subtitles=, or PGS kept embedded; Dolby Vision as a mode that outputs MP4 through dovi_tool; Plex library layout and refresh. Output is MKV (MP4 only for DV), sources are read-only, one ffmpeg process at a time.
 ---
 
 # Video convert (batch)
@@ -181,8 +181,9 @@ skipping files whose output already exists, and a failure leaves no partial file
 
 ## Video: the fixed set
 
-Copy-set: `hevc` (Main/Main10, ≤10 bits, ≤3840x2160), `h264`, `mpeg2video`,
-`mpeg4`, `av1`, `vp8`, `vp9`. Anything outside it → HEVC. WMV2 never played at
+Copy-set: `hevc` (Main/Main10, ≤10 bits, ≤3840x2160), `h264` (**8-bit only**;
+High10 never plays on the TV, verified), `mpeg2video`, `mpeg4`, `av1`, `vp8`,
+`vp9`. Anything outside it → HEVC. WMV2 never played at
 all (36 retries) → always re-encode.
 
 Encode flags, verbatim. Do not change the numbers:
