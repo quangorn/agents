@@ -26,6 +26,12 @@ is not included in this repository and is not modified by it.
 Used as external command line tools at runtime. None of them are included in
 this repository and none of them are modified by it.
 
+### Plex Media Server
+
+The `plex-tracks` skill drives the HTTP API of a running Plex Media Server on
+the local network. The server is not included in this repository, is not
+shipped with it, and is not modified by it.
+
 ## Dolby Vision and Dolby trademarks
 
 Dolby Vision, Dolby Digital, Dolby Digital Plus, AC-3, E-AC-3, TrueHD, DTS,
@@ -33,3 +39,10 @@ FLAC and HDR10 are trademarks or registered trademarks of their respective
 owners. This repository is not affiliated with, endorsed by or sponsored by
 any of them. The names are used only to describe the formats the tooling
 handles.
+
+## Plex trademarks
+
+Plex and Plex Media Server are trademarks or registered trademarks of their
+respective owners. This repository is not affiliated with, endorsed by or
+sponsored by them. The names are used only to describe the media server the
+tooling talks to.

@@ -1,9 +1,9 @@
 {
   "$schema": "https://opencode.ai/config.json",
   // Makes the skills of every project in this repository visible when opencode
-  // is started in the repository root: video-convert and ass-to-srt, each with
-  // its skills under the project's own .opencode/skills. Relative paths are
-  // resolved from the working directory, so this only applies when opencode
+  // is started in the repository root: video-convert, ass-to-srt and plex-tracks,
+  // each with its skills under the project's own .opencode/skills. Relative paths
+  // are resolved from the working directory, so this only applies when opencode
   // runs in the clone.
-  "skills": ["./video-convert/.opencode/skills", "./ass-to-srt/.opencode/skills"]
+  "skills": ["./video-convert/.opencode/skills", "./ass-to-srt/.opencode/skills", "./plex-tracks/.opencode/skills"]
 }
