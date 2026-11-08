@@ -38,6 +38,9 @@ python3 ~/.config/opencode/skills/plex-tracks/scripts/plex_tracks.py \
 
 Prints every episode and all audio/subtitle streams; `ВЫБРАНО` marks the current default. Ambiguous title matches abort and ask for `--section`.
 
+A film is one item: `--show "<movie title>"` with no `--season`. `--episode` is
+ignored for a film (the warning says so) and applies only to shows.
+
 ## 2. Apply
 
 Without `--apply` the run is a plan only (no writes). Save the JSON report so you can roll back:
@@ -59,6 +62,7 @@ python3 "<skill-dir>/scripts/plex_tracks.py" --undo plex-jjk-s1.json
 | `--subtitle-external` | only sidecar `.srt/.ass` files next to the media |
 | `--subtitle-keyword Crunchyroll` | pick a specific translation |
 | `--allow-forced` | allow forced subtitle tracks (avoided by default) |
+| `--episode 5,7` | only these episode numbers, `5-9` is a range (shows only) |
 | `--limit N` | only the first N episodes — test before a bulk change |
 | `--json` | machine-readable report |
 | `--undo report.json` | restore the `before` ids recorded in a report |
@@ -72,7 +76,7 @@ POST /library/parts/{partId}?audioStreamID={streamId}&allParts=1
 - `streamType`: 1 video, 2 audio, 3 subtitles. `streamId` is the `<Stream id=...>`, not `index`.
 - The write sets `selected="1"` **for the account owning the token** — that is the real player default. `default="1"` comes from the file's MKV flags and is untouched.
 - There is no show- or season-level default: the script loops over episodes.
-- An invalid `streamId` returns HTTP 200 and changes nothing, so every write is re-read from `/library/metadata/{ratingKey}`. Report status `applied` = verified, `FAILED` = Plex did not confirm.
+- An invalid `streamId` changes nothing: PMS 2025.x answers HTTP 400, an older PMS answered 200. A response code is never proof, so every write is re-read from `/library/metadata/{ratingKey}`. Report status `applied` = verified, `FAILED` = Plex did not confirm.
 - Re-running is safe: episodes already correct show `unchanged`.
 
 After `--apply`, report the summary: episodes changed, which track was chosen, any `FAILED` or ambiguous picks.
@@ -89,6 +93,7 @@ The script can select sidecar subtitles Plex already found (they have `file` and
 
 - Run `--show` before any change: never guess a stream id.
 - A bulk change starts with `--limit 1`; only then the whole season.
+- A per-episode override is `--episode 5,7`. `--limit N` is the first N episodes, never an episode selector.
 - Save the `--json` report of every `--apply`, it is the only thing `--undo` can work from.
-- Verify a write by reading the metadata back; a 200 response alone is not proof.
+- Verify a write by reading the metadata back; a response code alone is not proof (PMS 2025.x answers 400 for an unknown stream id).
 - The token never goes into chat, logs or reports.

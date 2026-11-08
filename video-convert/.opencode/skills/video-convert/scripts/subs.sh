@@ -129,14 +129,44 @@ done
 
 # Language filter. Empty filter = everything. "und" is always included (the
 # caller prints the note). ru <-> rus: a 3-letter tag starting with the wanted
-# 2-letter code matches, exactly as in convert.sh.
+# 2-letter code matches, exactly as in convert.sh. Prefix logic misses ja/jpn,
+# zh/chi, es/spa: lang_alias mirrors plex-tracks LANG_ALIASES so --lang ja reaches
+# Japanese tracks in every script, not just in convert.sh.
+lang_alias() {
+  case "$1" in
+    ru) printf 'rus' ;;
+    en) printf 'eng' ;;
+    ja) printf 'jpn' ;;
+    de) printf 'deu ger' ;;
+    fr) printf 'fre fra' ;;
+    es) printf 'spa' ;;
+    it) printf 'ita' ;;
+    uk) printf 'ukr' ;;
+    pl) printf 'pol' ;;
+    zh) printf 'chi zh' ;;
+    ko) printf 'kor' ;;
+    pt) printf 'por' ;;
+    sv) printf 'swe' ;;
+    no) printf 'nor' ;;
+    da) printf 'dan' ;;
+    fi) printf 'fin' ;;
+    nl) printf 'nld dut' ;;
+    tr) printf 'tur' ;;
+    cs) printf 'ces cze' ;;
+    *) printf '' ;;
+  esac
+}
+
 lang_match() {
-  local tag="$1" t want
+  local tag="$1" t want a
   [[ ${#LANGS[@]} -eq 0 ]] && return 0
   t="$(printf '%s' "$tag" | tr -d '\r[:space:]')"
   [[ "$t" == "und" ]] && return 0
   for want in "${LANGS[@]}"; do
     [[ "$t" == "$want" || "$t" == "${want}"* ]] && return 0
+    for a in $(lang_alias "$want"); do
+      [[ "$t" == "$a" ]] && return 0
+    done
   done
   return 1
 }

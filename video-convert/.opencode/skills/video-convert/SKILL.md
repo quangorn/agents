@@ -1,6 +1,6 @@
 ---
 name: video-convert
-description: Use when the user wants video files or a whole season of a series converted with ffmpeg for Plex and an LG OLED TV — «конвертни сериал», «пересохраните сезон в HEVC», «сделай MKV из этой папки», «конвертни фильм для Plex/TV», «сконвертируй сезон для телевизора», batch convert, remux a season. Fixed HEVC NVENC flag set (preset p4, cq 10, maxrate 200M/bufsize 100M), video copy-set (hevc Main/Main10 ≤10bit, h264 8-bit only, mpeg2/mpeg4, av1/vp8/vp9), audio ladder that copies ac3/eac3/aac/mp3/vorbis/opus/pcm/flac at ≤6 channels and downmixes anything over 6 channels to E-AC-3 5.1, DTS never copied; subtitles as ASS→SRT sidecar, burn-in with -vf subtitles=, or PGS kept embedded; Dolby Vision as a mode that outputs MP4 through dovi_tool; Plex library layout and refresh. Output is MKV (MP4 only for DV), sources are read-only, one ffmpeg process at a time.
+description: Use when the user wants video files or a whole season of a series converted with ffmpeg for Plex and an LG OLED TV — «конвертни сериал», «пересохраните сезон в HEVC», «сделай MKV из этой папки», «конвертни фильм для Plex/TV», «сконвертируй сезон для телевизора», batch convert, remux a season. Fixed HEVC NVENC flag set (preset p4, cq 10, maxrate 200M/bufsize 100M), video copy-set (hevc Main/Main10 ≤10bit, h264 8-bit only, mpeg2/mpeg4, av1/vp8/vp9), audio ladder that copies ac3/eac3/aac/mp3/vorbis/opus/pcm/flac at ≤6 channels and downmixes anything over 6 channels to E-AC-3 5.1, DTS never copied; subtitles as ASS→SRT sidecar, burn-in with -vf subtitles=, or PGS kept embedded; Dolby Vision as a mode that outputs MP4 through dovi_tool; Plex library layout and refresh; default audio and subtitle chosen with the user before converting and written through the plex-tracks skill after the library refresh. Output is MKV (MP4 only for DV), sources are read-only, one ffmpeg process at a time.
 ---
 
 # Video convert (batch)
@@ -21,6 +21,9 @@ Fixed decisions that are not up for renegotiation:
 - output is MKV. The single exception is Dolby Vision mode, which outputs MP4
 - verification is ffprobe on the result plus the Plex Media Server log, not a
   quality metric
+- the default audio and subtitle are the user's choice, asked before converting;
+  the container flag is written by convert.sh and the real player default by the
+  plex-tracks skill after the library refresh
 
 ## Config
 
@@ -36,16 +39,22 @@ Windows binaries get `cygpath -m` versions inside the scripts.
 | `SCRATCH` | `/cygdrive/d/tmp/cygwin/opencode` | intermediates and logs |
 | `DV_TMP` | `$HOME/tmp` | temp directory, used only by `dv.sh` (DV mode) |
 | `ASS2SRT` | installed `ass-to-srt` scripts dir | contains `ass2srt.py`, `convert.py` |
+| `PLEX_TRACKS` | installed `plex-tracks` scripts dir | contains `plex_tracks.py`, the optional skill that writes Plex defaults |
 
 ## Scripts
 
 ```
 bash scripts/preflight.sh
 bash scripts/probe.sh "<file.mkv>"          # markdown track table + DV flag + external-sub scan
+bash scripts/probe.sh "<file.mkv>" --quiet --tracks-json OUT.json   # machine dump, no DV probe
+bash scripts/tracks.sh --in-dir DIR [--out-json FILE]  # season-wide audio/subtitle union + divergent files
 bash scripts/convert.sh --in FILE --out OUT.mkv --video copy|encode --audio copy|encode \
-                        --sub-mode none|burn|sidecar [--lang ru] [--video-ids IDS] [--audio-ids IDS] [--sub-ids IDS]
+                        --sub-mode none|burn|sidecar [--lang ru] [--video-ids IDS] [--audio-ids IDS] [--sub-ids IDS] \
+                        [--default-audio LANG] [--default-audio-keyword TEXT] [--default-sub LANG|none] [--default-sub-keyword TEXT]
 bash scripts/batch.sh --in-dir DIR --out-dir DIR --video copy|encode --audio copy|encode \
-                      --sub-mode none|burn|sidecar [--lang ru] [--external DIR]
+                      --sub-mode none|burn|sidecar [--lang ru] [--external DIR] \
+                      [--default-audio LANG] [--default-audio-keyword TEXT] [--default-sub LANG|none] [--default-sub-keyword TEXT] \
+                      [--show TITLE] [--season N] [--section NAME]
 bash scripts/subs.sh --in FILE --out-dir DIR --lang ru --mode sidecar|burn [--external DIR|FILE] [--sub-ids IDS] [--export-sup]
 bash scripts/dv.sh -i IN.mkv [-o OUT.mp4] [-a IDS] [-s IDS] [-l rus,eng] \
                    [--probe] [--title TEXT] [--tmp DIR]
@@ -102,6 +111,42 @@ Defaults proposed to the user (verified matrix: `references/lg-oled-codecs.md`):
   encode by the ladder
 - source with Dolby Vision → DV mode, output MP4
 
+### Default audio and subtitle: ask now, before any conversion
+
+`tracks.sh --in-dir DIR [--out-json FILE]` scans every file with
+`probe.sh --quiet` (no markdown, no DV slice) and prints the union of audio and
+subtitle tracks with the number of episodes carrying each, the base track set, and
+the files whose set diverges from it. Ask in **one `question` call** together with
+the copy/encode questions:
+
+- **default audio**: one option per audio track from the union table (language +
+  title + codec + channels). Ask only when there is more than one audio track.
+- **default subtitle**: one option per subtitle track, **plus an explicit "off"
+  option**. Plex keeps subtitles off by default, so "off" is a real answer, not
+  the absence of a choice. Ask whenever the files carry at least one subtitle.
+- A series is asked **once**, the answer applies to every episode of the season.
+  A film is asked per film.
+
+Record the answer as **language + keyword** (the track title), never as a stream
+id: indexes move from episode to episode, and both the container flag and
+plex-tracks work on language + title:
+
+```bash
+--default-audio ru --default-audio-keyword "AniFilm"
+--default-sub ru --default-sub-keyword Crunchyroll      # embedded ASS/SRT
+--default-sub ru                                        # sidecar .srt (no keyword)
+--default-sub none                                      # Plex keeps subtitles off
+```
+
+A subtitle exported as a sidecar (`.ass` → `.srt`) loses its title tag, so for the
+sidecar path the keyword is dropped: `--subtitle ru --subtitle-external` in
+plex-tracks.
+
+**Divergent episodes.** `tracks.sh` lists the files whose track set differs from
+the base set with what is extra and what is missing. Re-ask the default question
+for exactly those files and give them their own plex-tracks run with
+`--episode 5,7`; never apply an override to the whole season.
+
 **Input contract.** If the source was not given, ask (file, folder, series). If
 the destination was not given, decide film vs series from context and resolve the
 collection path through the Plex API (`references/plex-api.md`): sections list →
@@ -153,24 +198,34 @@ copy/encode decisions come from the ladder, not from extra flags:
 
 ```bash
 bash scripts/batch.sh --in-dir DIR --out-dir DIR --video copy|encode --audio copy|encode \
-                      --sub-mode none|burn|sidecar [--lang ru] [--external DIR]
+                      --sub-mode none|burn|sidecar [--lang ru] [--external DIR] \
+                      [--default-audio LANG] [--default-audio-keyword TEXT] \
+                      [--default-sub LANG|none] [--default-sub-keyword TEXT] \
+                      [--show TITLE] [--season N] [--section NAME]
 ```
 
-Example (a season folder):
+Example (a season folder, the defaults chosen in §2):
 
 ```bash
 bash scripts/batch.sh --in-dir "<Season 1>" --out-dir "<Out/Season 2>" \
-     --video encode --audio encode --sub-mode sidecar --lang ru
+     --video encode --audio encode --sub-mode sidecar --lang ru \
+     --default-audio ja --default-audio-keyword "Crunchyroll" \
+     --default-sub ru --show "<show title>" --season 2 --section Serials
 ```
 
 One ffmpeg at a time. Video copy or the fixed HEVC set; audio by the ladder;
-subtitles by the path chosen in §3. A source directory named `Season N` puts its
-outputs in `OUT_DIR/Season N/`; films go flat into `--out-dir`. Batch resumes by
-skipping files whose output already exists, and a failure leaves no partial file.
+subtitles by the path chosen in §3; the default audio/subtitle flags go to every
+`convert.sh` call, resolved to that file's indexes. A source directory named
+`Season N` puts its outputs in `OUT_DIR/Season N/`; films go flat into `--out-dir`.
+Batch resumes by skipping files whose output already exists, and a failure leaves
+no partial file.
 
 ## 6. Verify, then refresh the library
 
-1. `ffprobe` the result: codec, channel count and duration must match the plan.
+1. `ffprobe` the result: codec, channel count and duration must match the plan,
+   and the `default` disposition must match the choice from §2 — the chosen audio
+   `default=1`, every other stream of that type `default=0` (convert.sh checks this
+   itself; in jq the number 0 is truthy, so compare the value, never truthiness).
 2. Read `Plex Media Server.log` for the playback session: streams must go as a
    file (`Content-Length of ...`), and there must be no `Job running` beyond
    subtitle segmentation. A session that transcodes means the file is wrong.
@@ -178,6 +233,53 @@ skipping files whose output already exists, and a failure leaves no partial file
    confirm with `/library/search?query=…` that the new file has a `ratingKey`.
 4. Report: where the files are, sizes, what was copied and what was re-encoded,
    and anything skipped (PGS, unsupported codec, missing font).
+
+## 7. Plex defaults, after the conversion
+
+The container flag written by convert.sh is `default="1"`; the **real** player
+default is `selected="1"`, and only plex-tracks writes it. So the plex-tracks step
+runs **after every file is converted and after the library is refreshed**: a
+sidecar `.srt` exists on disk and Plex can select it only after it indexed it, so
+a write before the scan misses the sidecar silently.
+
+`batch.sh --show "<title>" --season N --section "<section>"` does the whole step:
+it refreshes the section that covers the **output** folder, and confirms indexing by
+**name**: every converted output basename must appear among the plan items' Part
+file paths (the plan runs with `--json`; Plex stores Windows paths, basenames are
+cut on `/` and `\`). A count match alone is not proof — Plex can index as many
+episodes as the season has under a different show, and plex-tracks would write
+against the wrong list. The scan is asynchronous, so the plan run is repeated,
+bounded to 6 attempts. When every name is indexed it applies `--limit 1`
+first, then the season. Everything is done through the plex-tracks skill:
+
+```bash
+python3 "$PLEX_TRACKS/plex_tracks.py" --show "<title>" --season N --section Serials \
+  --audio ja --audio-keyword Crunchyroll --subtitle ru --subtitle-external \
+  --limit 1 --apply --json > report-first.json
+python3 "$PLEX_TRACKS/plex_tracks.py" --show "<title>" --season N --section Serials \
+  --audio ja --audio-keyword Crunchyroll --subtitle ru --subtitle-external \
+  --apply --json > report.json
+python3 "$PLEX_TRACKS/plex_tracks.py" --undo report.json    # rollback
+```
+
+- Plex keeps **subtitles off** by default. The user's answer "off" is written as
+  `--subtitle none`; burn-in means subtitles are always on, and `--sub-mode none`
+  leaves no subtitle stream at all, so both must run with `--subtitle none`.
+- `--subtitle-external` is added only when **every** converted file has a sidecar
+  of the chosen language: with a partial set, the episodes without a sidecar report
+  `no match` and get nothing written, while the embedded streams are selectable for
+  all of them. `batch.sh` counts the sidecars next to the outputs and logs the
+  decision.
+- Every `--json` report is saved (`batch.sh` writes it next to `batch.log`): it is
+  the only thing `--undo` can work from. A response code is never proof — writes
+  are verified by reading the metadata back.
+- plex-tracks is **optional**: if it is not installed, the conversion runs, the
+  files carry the container flags, and the report states that the Plex defaults
+  were not applied. Preflight prints it as OPTIONAL, not MISSING.
+- A divergent episode gets its own run with `--episode 5,7`. `--limit N` is the
+  first N episodes, never an episode selector.
+- Dolby Vision mode writes MP4: container default flags are not used there, the
+  Plex defaults come only from plex-tracks.
 
 ## Video: the fixed set
 
@@ -240,6 +342,14 @@ without it ffmpeg returns rc=127 and leaves an empty file. Never produce them.
 - Dolby Vision → DV mode (MP4), not a HEVC re-encode
 - the TV app's subtitle-overlay option is never used
 - the Plex token is never printed into chat
+- default audio/subtitle are the user's choice, asked **before** converting; for a
+  series once per season, for a film per film; never chosen silently
+- subtitles are OFF by default in Plex: a subtitle stream gets the container
+  `default` flag only when the user explicitly picked it, and every other subtitle
+  stream has the flag cleared
+- plex-tracks runs only after the library refresh with the episodes indexed; a
+  write before the scan silently misses sidecar subtitles
+- every `--apply` report is saved, it is the only thing `--undo` can work from
 
 ## Reference
 
@@ -248,3 +358,5 @@ without it ffmpeg returns rc=127 and leaves an empty file. Never produce them.
 - `references/plex-api.md` — token, sections, search, metadata, refresh, layout.
 - `references/traps.md` — every trap found in real sessions. Read before touching
   any flag.
+- the `plex-tracks` skill (§7) — writes the real Plex player default `selected`
+  per episode, verifies every write, and rolls back from the saved report.

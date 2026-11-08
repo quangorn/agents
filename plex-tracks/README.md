@@ -19,10 +19,11 @@ verifies it, and reports what changed.
 - **Plan first, write later.** Without `--apply` nothing is written; the run
   prints what would be chosen and what is already correct (`unchanged`), so a
   season can be inspected before anything is touched.
-- **Verified writes only.** An invalid stream id returns HTTP 200 and changes
-  nothing, so the script never trusts the response. After every write it
-  re-reads `/library/metadata/{ratingKey}` and reports `applied` only when the
-  target track really is selected, `FAILED` when Plex did not confirm.
+- **Verified writes only.** An unknown stream id changes nothing (PMS 2025.x
+  answers HTTP 400, an older PMS answered 200), so the script never trusts the
+  response code. After every write it re-reads `/library/metadata/{ratingKey}`
+  and reports `applied` only when the target track really is selected, `FAILED`
+  when Plex did not confirm.
 - **Matching by language, codec or title.** `--audio ja`, `--audio-codec flac`,
   `--audio-keyword AniFilm`, `--audio-exclude dub`; the same set for subtitles,
   plus `--subtitle none` to switch subtitles off and `--subtitle-external` to
@@ -112,6 +113,10 @@ python3 .../plex_tracks.py --undo plex-s1.json
 # test one episode before touching a whole season
 python3 .../plex_tracks.py --show "Магическая битва" --season 1 \
   --audio ja --limit 1 --apply
+
+# only the episodes that differ from the rest of the season
+python3 .../plex_tracks.py --show "Магическая битва" --season 1 \
+  --episode 5,7 --audio ja --apply --json > plex-s1-eps.json
 ```
 
 ### Options
@@ -120,6 +125,7 @@ python3 .../plex_tracks.py --show "Магическая битва" --season 1 \
 |--------|---------|
 | `--show TITLE` | show or movie title; not needed with `--undo` |
 | `--season N` | season index (shows only); omitted = every season |
+| `--episode 5,7` | only these episode numbers, `5-9` is a range (shows only) — for the episodes that differ from the rest of the season |
 | `--section NAME` | limit the search to one library section; required when a title matches several entries |
 | `--audio LANG` | audio language: ISO code (`ja`, `ru`, `en`), Plex code (`jpn`) or a name («японский», `日本語`) |
 | `--audio-codec CODEC` | prefer a codec: `flac`, `aac`, `ac3`, `eac3`, `dts`, `mp3` |

@@ -11,6 +11,7 @@ PLEX_URL="${PLEX_URL:-http://127.0.0.1:32400}"
 PLEX_TOKEN_FILE="${PLEX_TOKEN_FILE:-${USERPROFILE:-$HOME}/AppData/Local/Plex Media Server/.LocalAdminToken}"
 SCRATCH="${SCRATCH:-/cygdrive/d/tmp/cygwin/opencode}"
 ASS2SRT="${ASS2SRT:-$HOME/.config/opencode/skills/ass-to-srt/scripts}"
+PLEX_TRACKS="${PLEX_TRACKS:-$HOME/.config/opencode/skills/plex-tracks/scripts}"
 
 # Optional layout resolution mode (plan §1, SKILL.md §1): --in-dir DIR --out-dir DIR
 # makes preflight resolve the target folder by the layout rule. Without arguments
@@ -80,6 +81,18 @@ if [[ -f "$ASS2SRT/ass2srt.py" && -f "$ASS2SRT/convert.py" ]]; then
 else
   printf '  MISSING %-16s install the ass-to-srt skill; ASS2SRT=%s\n' ass2srt "$ASS2SRT"
   MISSING+=("ass2srt")
+fi
+
+# plex-tracks is an OPTIONAL dependency: it writes the real Plex player default
+# (selected) after the conversion and the library refresh. A missing plex-tracks
+# does NOT stop the conversion: the files are written with their container flags,
+# and the final report says the Plex defaults were not applied. It is reported as
+# OPTIONAL, never added to MISSING. (SKILL.md §7)
+PT_SH="$PLEX_TRACKS/plex_tracks.py"
+if [[ -f "$PT_SH" ]]; then
+  printf '  OK      %-16s %s\n' plex-tracks "$PT_SH"
+else
+  printf '  OPTIONAL %-16s install the plex-tracks skill; PLEX_TRACKS=%s\n' plex-tracks "$PLEX_TRACKS"
 fi
 
 # Scratch directory: intermediates, NVENC tests, batch logs. Created here.

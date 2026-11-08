@@ -21,8 +21,31 @@ winpath() { cygpath -m "$1" 2>/dev/null || printf '%s' "$1"; }
 # as unknown. Strip \r in one central place. (references/traps.md)
 jqf() { printf '%s' "$1" | jq -r "$2" 2>/dev/null | tr -d '\r'; }
 
-[[ $# -eq 1 && -f "$1" ]] || { printf 'usage: probe.sh <file.mkv|file.mp4>\n' >&2; exit 1; }
-SRC="$1"
+usage() {
+  cat <<'USAGE'
+Usage: probe.sh FILE [--tracks-json OUT.json] [--quiet]
+
+Prints a markdown track table for FILE. --quiet prints nothing: the JSON dump
+only, no Dolby Vision probe (the DV probe extracts a 20 s slice, which is what
+tracks.sh does not need). --tracks-json writes one machine-readable object per
+file for tracks.sh: absolute stream index, kind, codec, profile, language tag,
+title, channels. The language tag and title are exactly what plex-tracks matches
+on, so they must survive into the JSON.
+USAGE
+}
+
+SRC=""; TRACKS_JSON=""; QUIET=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tracks-json) TRACKS_JSON="${2:-}"; shift 2 ;;
+    --quiet) QUIET=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) usage >&2; die "unknown flag: $1" ;;
+    *) [[ -z "$SRC" ]] && SRC="$1"; shift ;;
+  esac
+done
+[[ -n "$SRC" && -f "$SRC" ]] || { usage >&2; exit 1; }
+[[ -z "$TRACKS_JSON" || -n "$(dirname "$TRACKS_JSON")" ]] || die "--tracks-json needs a writable directory"
 SRC_WIN="$(winpath "$SRC")"
 
 # Plain -show_streams and plain -show_format, NO -show_entries combinations: on
@@ -40,6 +63,25 @@ smeta() {
   out="$(jqf "$STREAM_JSON" ".streams[] | select(.index==$idx) | ($expr) // empty")"
   printf '%s' "$out" | tr -d '\r' | sed 's/[[:space:]][[:space:]]*/ /g; s/^ *//; s/ *$//'
 }
+
+# Machine-readable dump for tracks.sh: one object per file, every stream with its
+# ABSOLUTE index, kind, codec, profile, language tag, title, channels. plex-tracks
+# matches a default track by language + keyword in the title, never by an index,
+# so the language tag and title must be in the JSON. Windows jq prints CRLF: strip
+# it, exactly as jqf does. (references/traps.md)
+dump_tracks() {
+  printf '%s' "$STREAM_JSON" | jq -c --arg file "$(basename "$SRC")" \
+    '{file: $file, tracks: [ .streams[] | {index: .index, kind: .codec_type,
+       codec: .codec_name, profile: .profile, lang: (.tags.language // "und"),
+       title: (.tags.title // ""), ch: .channels, bits: .bits_per_raw_sample,
+       w: .width, h: .height} ] }' | tr -d '\r'
+}
+
+[[ -z "$TRACKS_JSON" ]] || { dump_tracks > "$TRACKS_JSON" || die "cannot write $TRACKS_JSON"; }
+# `tr` always returns 0, so `|| die` alone never fires: an empty file is the real
+# failure mode (ffprobe printed nothing, jq choked). The caller (tracks.sh) also
+# checks -s, so probe.sh must not report success with an empty dump.
+[[ -z "$TRACKS_JSON" || -s "$TRACKS_JSON" ]] || die "empty track dump written to $TRACKS_JSON"
 
 CONT_BR="$(jqf "$FORMAT_JSON" '.format.bit_rate // empty')"
 DUR="$(jqf "$FORMAT_JSON" '.format.duration // empty')"
@@ -114,7 +156,12 @@ atmos_flag() {
 
 FIRST_HEVC="$(jqf "$STREAM_JSON" '[ .streams[] | select(.codec_type=="video" and .codec_name=="hevc") ] | .[0].index // empty')"
 DV_LINE='no (no HEVC video stream)'
-[[ -n "$FIRST_HEVC" ]] && DV_LINE="$(dv_probe "$FIRST_HEVC")"
+if [[ -n "$FIRST_HEVC" ]] && (( ! QUIET )); then DV_LINE="$(dv_probe "$FIRST_HEVC")"; fi
+
+# Quiet mode: the JSON dump is the whole point, nothing is printed and no DV
+# slice is cut. tracks.sh runs this on every file of a season, so a DV probe per
+# file would burn 20 s per episode for a flag it does not read.
+if (( QUIET )); then exit 0; fi
 
 printf '## Probe: `%s`\n\n' "$SRC"
 printf '| # | type | codec | profile | bits | W x H | fps | ch | lang | title | kbps | flags |\n'
@@ -137,8 +184,10 @@ for idx in $(jqf "$STREAM_JSON" '.streams[] | .index'); do
   [[ -n "$title" ]] || title="-"
   # Titles legitimately contain "|"; escape it so the markdown table columns
   # cannot shift. Records inside the scripts use US (0x1f), never "|".
+  # ${title//|/\|} does NOT work: bash reads \| in the replacement as a plain |,
+  # so the escape silently disappears and the row shifts. Escape with sed.
   # (references/traps.md)
-  title="${title//|/\|}"
+  title="$(printf '%s' "$title" | sed 's/[|]/\\|/g')"
   [[ -n "$lang" ]] || lang="und"
 
   if [[ "$ctype" == "video" ]]; then

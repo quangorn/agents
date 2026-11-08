@@ -11,9 +11,14 @@ so it can be read, copied and adapted freely.
 
 | Project | What it does |
 |---------|--------------|
-| [video-convert](video-convert/) | Converts batches and whole seasons for Plex and an LG OLED: fixed HEVC NVENC flag set, copy-sets, audio ladder to E-AC-3, subtitle sidecar vs burn-in, Dolby Vision MP4 mode. |
+| [video-convert](video-convert/) | Converts batches and whole seasons for Plex and an LG OLED: fixed HEVC NVENC flag set, copy-sets, audio ladder to E-AC-3, subtitle sidecar vs burn-in, Dolby Vision MP4 mode, default audio and subtitle chosen with the user before converting. |
 | [ass-to-srt](ass-to-srt/) | Converts ASS/SSA subtitle files and subtitle archives into styled SRT. |
 | [plex-tracks](plex-tracks/) | Sets the default audio and subtitle track for Plex episodes, seasons and shows through the Media Server API, with verified writes and rollback. |
+
+`video-convert` uses the other two: it delegates ASS → SRT to `ass-to-srt`, and
+after the library refresh it calls `plex-tracks` to write the Plex player default
+for the tracks the user chose before converting. `plex-tracks` is optional for
+`video-convert`: conversion runs without it.
 
 ## Using the skills
 

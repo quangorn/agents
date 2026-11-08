@@ -14,6 +14,10 @@ On top of the raw transcode the skill:
 
 - probes every file and shows you the track table, then lets **you** decide
   which tracks to copy and which to re-encode
+- asks once per series (per film for a movie) which audio and subtitle Plex
+  should play by default, **before anything is converted**, and writes that choice
+  into the container flags; after the library scan the real Plex player default is
+  written through the `plex-tracks` skill
 - picks audio for TV playback by a fixed ladder, so DTS and TrueHD never end up
   in a file your TV cannot decode
 - handles subtitles by one of three rules: ASS → SRT sidecar (via the
@@ -44,6 +48,12 @@ The ASS → SRT conversion is not implemented here. It is delegated to the separ
 **ass-to-srt** skill, and the `ASS2SRT` variable points at its installed scripts
 directory (`ass2srt.py`, `convert.py` inside). Install that skill first; preflight
 reports it as missing when the path does not resolve.
+
+Writing the Plex default tracks is delegated to the separate **plex-tracks** skill
+(`PLEX_TRACKS` points at its scripts dir). It is an **optional** dependency: the
+conversion runs without it, the files carry the container default flags, and the
+final report says the Plex defaults were not applied. Preflight prints plex-tracks
+as OPTIONAL, never as MISSING, so a missing plex-tracks never stops a run.
 
 Plex does not index sidecar `.ogg` subtitles in a video collection — that is by
 design, not a bug. Files with `.ogg` subtitles have to be checked on the TV by
@@ -82,24 +92,34 @@ Through opencode, ask for it in plain language:
 > сделай MKV из этой папки
 >
 > convert this season for Plex, keep the Russian audio
+>
+> включи японскую озвучку по умолчанию и русские субтитры для всего сезона
 
 The agent then follows the skill: preflight, probe, show you the track table and
-ask what to copy, ask about subtitles, convert one file at a time, verify against
-the Plex logs, refresh the library and report.
+ask what to copy, ask which audio and subtitle Plex should play by default, ask
+about the subtitle path, convert one file at a time, verify against the Plex logs,
+refresh the library, write the Plex defaults through `plex-tracks`, and report.
 
 From the shell, the scripts work on their own:
 
 ```bash
 bash scripts/preflight.sh                       # every tool + a live NVENC encode
 bash scripts/probe.sh "Season 1/episode 01.mkv" # markdown track table + DV flag + external-sub scan
+bash scripts/tracks.sh --in-dir "Season 1"       # union of audio/subtitles per episode count,
+                                                 # plus the files whose track set diverges
 
-# one file: copy the video, encode the audio, subtitles as sidecar
+# one file: copy the video, encode the audio, subtitles as sidecar,
+# the Plex defaults chosen by the user (language + keyword, never a stream id)
 bash scripts/convert.sh --in "episode.mkv" --out "Out/episode.mkv" \
-     --video copy --audio encode --sub-mode sidecar --lang ru
+     --video copy --audio encode --sub-mode sidecar --lang ru \
+     --default-audio ja --default-audio-keyword Crunchyroll --default-sub ru
 
-# a whole season, sequentially
+# a whole season, sequentially, with the same default choice for every episode;
+# --show / --season / --section run the plex-tracks step after the library refresh
 bash scripts/batch.sh --in-dir "Season 1" --out-dir "Out/Season 2" \
-     --video encode --audio encode --sub-mode sidecar --lang ru
+     --video encode --audio encode --sub-mode sidecar --lang ru \
+     --default-audio ja --default-audio-keyword Crunchyroll --default-sub ru \
+     --show "Магическая битва" --season 2 --section Serials
 
 # subtitles only
 bash scripts/subs.sh --in "episode.mkv" --out-dir "Out" --lang ru \
@@ -125,18 +145,33 @@ Track ids passed to `--video-ids`, `--audio-ids`, `--sub-ids` (convert.sh) and `
    the `question` tool asks which tracks to copy, which to re-encode, which
    subtitle language, and which subtitle path. Video transcoded + subtitles
    present → the skill always asks: burn-in (`-vf subtitles=`) or ASS → SRT
-   sidecar. Nothing is picked silently.
+   sidecar. Nothing is picked silently. The same `question` call also asks
+   **which audio and which subtitle Plex should play by default** — one question
+   per series (per film for a movie), answered once for the whole season, with
+   "off" as an explicit subtitle answer because Plex keeps subtitles off.
+   `tracks.sh` prints the union of tracks with the episode count, and lists the
+   files whose set diverges: those get their own question and their own
+   plex-tracks run with `--episode`.
 4. **Convert.** One ffmpeg process at a time. Video: copy when its codec is in
    the copy-set, otherwise the fixed HEVC NVENC set. Audio: the ladder.
-   Subtitles: the path you chose. Dolby Vision → DV mode, output MP4.
+   Subtitles: the path you chose. Dolby Vision → DV mode, output MP4. The chosen
+   default audio gets the container `default` flag, every other stream of that
+   type has the flag cleared; subtitles never carry `default` unless you picked
+   them.
 5. **Verification.** ffprobe on the result (codec, channel count, duration
-   matching) plus `Plex Media Server.log`: the streams are served as a file
+   matching, and the `default` disposition matching the choice) plus `Plex Media Server.log`: the streams are served as a file
    (`Content-Length of …`) and there is no `Job running` beyond subtitle
    segmentation.
 6. **Library refresh.** `POST /library/sections/<key>/refresh`, then
    `/library/search?query=…` to confirm the new file got a `ratingKey`. The final
    summary lists the files converted, their sizes, and what was copied vs
    re-encoded.
+7. **Plex defaults.** After the scan, through the `plex-tracks` skill: the real
+   player default (`selected`) is written per episode, one episode first
+   (`--limit 1`), then the season; every write is verified by reading the metadata
+   back, and the `--json` report is saved for `--undo`. A sidecar subtitle can be
+   selected only once Plex indexed it, so this step runs after the refresh.
+   Without plex-tracks installed, the step is reported as skipped.
 
 ## Configuration
 
@@ -151,6 +186,7 @@ default below is this machine; override them freely.
 | `SCRATCH` | `/cygdrive/d/tmp/cygwin/opencode` | intermediates and logs |
 | `DV_TMP` | `$HOME/tmp` | temp directory for the DV mode |
 | `ASS2SRT` | path to the installed `ass-to-srt` scripts dir | `ass2srt.py`, `convert.py` inside |
+| `PLEX_TRACKS` | path to the installed `plex-tracks` scripts dir | `plex_tracks.py` inside, optional dependency |
 
 ## Dolby Vision profiles
 
@@ -172,13 +208,18 @@ there was no DV.
 
 ## Documentation
 
-- `references/lg-oled-codecs.md` — the support matrix verified on the TV and in
-  the Plex logs: the video copy-set, the audio ladder, the subtitle table.
 - `references/plex-api.md` — the Plex API calls that resolve a destination and
   refresh the library.
 - `references/traps.md` — the traps hit in real sessions, with the failing command
   and the fix for each. Read it before changing anything that looks like a small
   detail.
+- `references/lg-oled-codecs.md` — the support matrix verified on the TV and in
+  the Plex logs: the video copy-set, the audio ladder, the subtitle table.
+
+The default audio and subtitle are written through the separate **plex-tracks**
+skill (its `--limit 1` test run, `--json` report for `--undo`, `--episode` for the
+episodes that differ). `ass-to-srt` makes the sidecar `.srt` files, `plex-tracks`
+selects them.
 
 ## License
 

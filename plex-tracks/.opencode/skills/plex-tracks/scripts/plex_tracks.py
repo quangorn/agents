@@ -7,8 +7,9 @@ Plex semantics (verified against PMS 1.x):
     That is what the player picks by default — the `default="1"` attribute comes
     from the file's own MKV flags and is not changed by this call.
   * Same endpoint with subtitleStreamID=<streamId> (or 0 for "no subtitles").
-  * An invalid/unknown stream id returns HTTP 200 and changes nothing, so every
-    write must be read back and verified.
+  * An unknown stream id is rejected: PMS 2025.x answers HTTP 400, an older PMS
+    answered 200 and changed nothing. The response code alone is never proof, so
+    every write must be read back and verified.
   * The setting is per media part, so a season/show must be looped episode by episode.
 
 No third-party dependencies (stdlib only). Python 3.8+.
@@ -236,9 +237,40 @@ def find_show(server, token, title, section=None):
     return found
 
 
-def season_items(server, token, show, season):
+def parse_episodes(spec):
+    """'5,7' / '5-9' / '5-9,12' -> set of ints. A bad token is a hard error.
+    int("abc") raises ValueError and traces back; catch it as a clean exit."""
+    out = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            if "-" in part:
+                first, last = part.split("-", 1)
+                out.update(range(int(first), int(last) + 1))
+            else:
+                out.add(int(part))
+        except ValueError:
+            raise SystemExit("Непонятный --episode: %s" % spec)
+    if not out:
+        raise SystemExit("Непонятный --episode: %s" % spec)
+    return out
+
+
+def season_items(server, token, show, season, episodes=None):
     if show["type"] != "show":
-        return [show]
+        # A movie has no seasons: its <Video> element is the one item. find_show
+        # returns dicts, main() needs XML Elements, so the element is fetched
+        # here. Returning the dict crashed main with 'dict' has no attribute
+        # 'attrib' — the movie path never worked.
+        if episodes:
+            log("--episode игнорируется: %s — фильм, эпизодов нет" % show["title"])
+        root = xml(server, show["key"], token)
+        video = root.find("Video")
+        if video is None:
+            raise SystemExit("Фильм «%s»: в метаданных нет <Video>" % show["title"])
+        return [video]
     root = xml(server, show["key"], token)
     seasons = root.findall("Directory")
     if season is not None:
@@ -249,6 +281,13 @@ def season_items(server, token, show, season):
     for s in seasons:
         ep_root = xml(server, s.attrib["key"], token)
         items.extend(ep_root.findall("Video"))
+    if episodes:
+        items = [i for i in items
+                 if (i.attrib.get("index") or "").isdigit() and int(i.attrib["index"]) in episodes]
+        if not items:
+            raise SystemExit("Эпизоды %s не найдены в «%s» (season %s)"
+                             % (",".join(str(e) for e in sorted(episodes)),
+                                show["title"], season if season is not None else "all"))
     return items
 
 
@@ -307,6 +346,7 @@ def main():
     p.add_argument("--token", help="Plex token (default $PLEX_TOKEN / ~/.config/opencode/plex.yaml)")
     p.add_argument("--show", help="Show or movie title (not needed with --undo)")
     p.add_argument("--season", type=int, help="Season index (shows only)")
+    p.add_argument("--episode", help="Only these episode numbers: 5,7 or 5-9 (shows only)")
     p.add_argument("--section", help="Limit to one library section (name or id)")
     p.add_argument("--audio", help="Target audio language: jpn/ru/en/…")
     p.add_argument("--audio-codec", help="Prefer codec: flac/aac/ac3/dts/…")
@@ -366,7 +406,8 @@ def main():
     log("Шоу: %s (ratingKey %s, section %s)" % (show["title"], show["ratingKey"], show["sectionTitle"]))
 
     report = []
-    for item in season_items(server, token, show, args.season):
+    for item in season_items(server, token, show, args.season,
+                             parse_episodes(args.episode) if args.episode else None):
         if args.limit and len(report) >= args.limit:
             break
         rk = item.attrib["ratingKey"]

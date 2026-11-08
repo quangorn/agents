@@ -41,13 +41,22 @@ usage() {
 Usage: convert.sh --in FILE --out OUT.mkv --video copy|encode --audio copy|encode
                   --sub-mode none|burn|sidecar [--lang ru]
                   [--video-ids IDS] [--audio-ids IDS] [--sub-ids IDS]
+                  [--default-audio LANG] [--default-audio-keyword TEXT]
+                  [--default-sub LANG|none] [--default-sub-keyword TEXT]
 
 Track ids are ABSOLUTE stream indexes (what probe.sh prints and "ffmpeg -map
 0:ID" expects), comma separated. Output must be .mkv. One ffmpeg at a time.
+
+--default-audio / --default-sub mark the Plex default track by LANGUAGE and by a
+KEYWORD in the track title, never by an index: the same episode set has different
+indexes in every file, and plex-tracks matches on language + title. The chosen
+stream gets the container default flag, every other stream has the flag cleared;
+--default-sub none clears all subtitle flags (Plex keeps subtitles off by default).
 USAGE
 }
 
 IN=""; OUT=""; VMODE=""; AMODE=""; SUBMODE=""; SUBLANG=""; VIDS=""; AIDS=""; SIDS=""
+DA_LANG=""; DA_KW=""; DS_LANG=""; DS_KW=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --in) IN="${2:-}"; shift 2 ;;
@@ -59,6 +68,10 @@ while [[ $# -gt 0 ]]; do
     --video-ids) VIDS="${2:-}"; shift 2 ;;
     --audio-ids) AIDS="${2:-}"; shift 2 ;;
     --sub-ids) SIDS="${2:-}"; shift 2 ;;
+    --default-audio) DA_LANG="${2:-}"; shift 2 ;;
+    --default-audio-keyword) DA_KW="${2:-}"; shift 2 ;;
+    --default-sub) DS_LANG="${2:-}"; shift 2 ;;
+    --default-sub-keyword) DS_KW="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown argument: $1" ;;
   esac
@@ -113,12 +126,45 @@ smeta() {
 }
 
 # Language: strip \r first; accept ru <-> rus (a 3-letter tag starting with the
-# wanted 2-letter code matches).
+# wanted 2-letter code matches). Prefix logic alone misses the common ISO codes:
+# ja never matches jpn, zh never matches chi, es never matches spa, so
+# --default-audio ja matched nothing and every audio default was cleared with
+# exit 0. lang_alias mirrors plex-tracks LANG_ALIASES (plex_tracks.py) so the
+# same language token works in both scripts.
+lang_alias() {
+  case "$1" in
+    ru) printf 'rus' ;;
+    en) printf 'eng' ;;
+    ja) printf 'jpn' ;;
+    de) printf 'deu ger' ;;
+    fr) printf 'fre fra' ;;
+    es) printf 'spa' ;;
+    it) printf 'ita' ;;
+    uk) printf 'ukr' ;;
+    pl) printf 'pol' ;;
+    zh) printf 'chi zh' ;;
+    ko) printf 'kor' ;;
+    pt) printf 'por' ;;
+    sv) printf 'swe' ;;
+    no) printf 'nor' ;;
+    da) printf 'dan' ;;
+    fi) printf 'fin' ;;
+    nl) printf 'nld dut' ;;
+    tr) printf 'tur' ;;
+    cs) printf 'ces cze' ;;
+    *) printf '' ;;
+  esac
+}
+
 lang_match() {
-  local want="$1" tag="$2" t
+  local want="$1" tag="$2" t a
   [[ -z "$want" ]] && return 0
   t="$(printf '%s' "$tag" | tr -d '\r[:space:]')"
-  [[ "$t" == "$want" || "$t" == "${want}"* ]]
+  [[ "$t" == "$want" || "$t" == "${want}"* ]] && return 0
+  for a in $(lang_alias "$want"); do
+    [[ "$t" == "$a" ]] && return 0
+  done
+  return 1
 }
 
 # Name token written into the sidecar file name, copied from subs.sh name_lang()
@@ -135,6 +181,28 @@ name_lang() {
   [[ "$t" == "${want}"* ]] && { printf '%s' "$want"; return; }
   printf '%s' "$tag"
 }
+
+# Keyword match on a track title, ASCII case-insensitive. Titles legitimately
+# carry "|" ("Dub | AniFilm"), so grep -F (fixed string), never a regex. tr
+# lowercases ASCII only: pass a Cyrillic keyword in the exact case Plex shows.
+kw_match() {
+  local want="$1" title="$2" w t
+  [[ -z "$want" ]] && return 0
+  w="$(printf '%s' "$want" | tr 'A-Z' 'a-z')"
+  t="$(printf '%s' "$title" | tr 'A-Z' 'a-z')"
+  printf '%s' "$t" | grep -qF -- "$w"
+}
+
+# DA_SET / DS_SET: the user asked for a Plex default track.
+# DAPOS / DSPOS are positions in the MAPPED audio / subtitle order, which is what
+# -disposition:a:N addresses (verified: N is the N-th stream of that type, not the
+# absolute output index that -ac:N uses). -1 = nothing matched.
+# --default-sub none means "clear every subtitle default flag": Plex has subtitles
+# off by default, so the MKV must not carry a default subtitle that turns them on.
+DA_SET=0; DS_SET=0
+[[ -n "$DA_LANG" ]] && DA_SET=1
+[[ -n "$DS_LANG" ]] && DS_SET=1
+DAPOS=-1; DSPOS=-1
 
 VIDS_AVAIL="$(jqf "$STREAM_JSON" '.streams[] | select(.codec_type=="video") | .index' | tr '\n' ' ')"
 AIDS_AVAIL="$(jqf "$STREAM_JSON" '.streams[] | select(.codec_type=="audio") | .index' | tr '\n' ' ')"
@@ -212,6 +280,8 @@ FF=("$FFMPEG_BIN" -hide_banner -v info -y -i "$SRC_WIN")
 log "in    $IN"
 log "out   $OUT (matroska)"
 log "mode  video=$VMODE audio=$AMODE sub-mode=$SUBMODE lang=${SUBLANG:-all}"
+(( DA_SET )) && log "default audio: lang=$DA_LANG${DA_KW:+ keyword=\"$DA_KW\"}"
+(( DS_SET )) && log "default sub: lang=$DS_LANG${DS_KW:+ keyword=\"$DS_KW\"}"
 
 # POSV counts the mapped VIDEO streams and indexes -c:v:POSV. An unindexed -c:v
 # applies to every video stream, so the last -c:v on the line wins and an encode
@@ -272,6 +342,18 @@ for id in $WANT_A; do
     EXP_A+=("encode$SEP$pcodec$SEP$pac")
     log "audio $id: $codec ${ch}ch -> $pcodec ${pac}ch${pbr:+ $pbr}"
   fi
+  # Default audio is picked by language + keyword, not by an index: the stream
+  # indexes move from episode to episode, and plex-tracks matches on the language
+  # tag and the title. POSA here is exactly the position the MKV default flag goes
+  # to (the disposition array is built after the loop).
+  if (( DA_SET )) && (( DAPOS < 0 )); then
+    alang="$(smeta "$id" '.tags.language')"; alang="${alang:-und}"
+    atitle="$(smeta "$id" '.tags.title')"
+    if lang_match "$DA_LANG" "$alang" && kw_match "$DA_KW" "$atitle"; then
+      DAPOS="$POSA"
+      log "default audio $id: lang=$alang${atitle:+ title=\"$atitle\"} -> default flag"
+    fi
+  fi
   POSA=$((POSA+1))
   POSALL=$((POSALL+1))
 done
@@ -324,6 +406,22 @@ sidecar_lang() {
   printf '%s' "$lang"
 }
 
+# Record the position of the default subtitle among the mapped subtitle streams.
+# Called right after -map and before POSS advances: POSS is the index
+# -disposition:s:N expects for this stream. --default-sub none never matches; it
+# means "clear every subtitle default flag", because Plex keeps subtitles off.
+try_default_sub() {   # absolute stream id, language tag
+  local id="$1" lang="$2" stitle
+  (( DS_SET )) || return 0
+  [[ "$DS_LANG" == "none" ]] && return 0
+  (( DSPOS >= 0 )) && return 0
+  stitle="$(smeta "$id" '.tags.title')"
+  if lang_match "$DS_LANG" "$lang" && kw_match "$DS_KW" "$stitle"; then
+    DSPOS="$POSS"
+    log "default sub $id: lang=$lang${stitle:+ title=\"$stitle\"} -> default flag"
+  fi
+}
+
 POSS=0
 if [[ "$SUBMODE" == "none" ]]; then
   log "sub-mode none: all subtitle streams dropped"
@@ -339,12 +437,14 @@ elif [[ "$SUBMODE" == "sidecar" ]]; then
     case "$codec" in
       hdmv_pgs_subtitle)
         FF+=(-map "0:$id")
+        try_default_sub "$id" "$lang"
         POSS=$((POSS+1)); EXP_SUBS=$((EXP_SUBS+1))
         log "sub $id ($lang): PGS copied embedded only, never sidecar"
         ;;
       ass|ssa)
         lang_match "$SUBLANG" "$lang" || { log "sub $id ($lang) skipped by --lang"; continue; }
         FF+=(-map "0:$id")
+        try_default_sub "$id" "$lang"
         POSS=$((POSS+1)); EXP_SUBS=$((EXP_SUBS+1))
         ASS_OUT="$WORK/$OUT_BASE.$id.$lang.ass"
         # ffmpeg is a native Windows binary: the extraction output MUST be the
@@ -368,6 +468,7 @@ elif [[ "$SUBMODE" == "sidecar" ]]; then
       subrip)
         lang_match "$SUBLANG" "$lang" || { log "sub $id ($lang) skipped by --lang"; continue; }
         FF+=(-map "0:$id")
+        try_default_sub "$id" "$lang"
         POSS=$((POSS+1)); EXP_SUBS=$((EXP_SUBS+1))
         log "sub $id ($lang): srt copied embedded"
         ;;
@@ -460,6 +561,44 @@ else
   fi
 fi
 
+# Container default flags: the chosen stream gets "default", every other stream
+# of the same type has the flag cleared. ffmpeg COPIES the source flags, so
+# clearing is a real write, not a no-op: a source whose first audio track carries
+# the default flag keeps it unless it is taken off here. Verified on this build:
+# -disposition:a:N addresses the N-th stream OF THAT TYPE in the output (the media
+# index, same as -c:a:N), and "-default" with the dash unsets the flag. This is
+# NOT the absolute -map-order index that -ac:N uses.
+DISP=()
+if (( DA_SET )); then
+  for ((p = 0; p < ${#EXP_A[@]}; p++)); do
+    dkey="-default"
+    (( p == DAPOS )) && dkey="default"
+    DISP+=(-disposition:a:"$p" "$dkey")
+  done
+  if (( DAPOS < 0 )); then
+    log "default audio ${DA_LANG}${DA_KW:+ + \"$DA_KW\"}: no match, every audio default cleared"
+  fi
+fi
+if (( DS_SET )); then
+  for ((p = 0; p < POSS; p++)); do
+    dkey="-default"
+    (( p == DSPOS )) && dkey="default"
+    DISP+=(-disposition:s:"$p" "$dkey")
+  done
+  if [[ "$DS_LANG" == "none" ]]; then
+    log "default sub none: every subtitle default flag cleared, Plex keeps subtitles off"
+  elif (( DSPOS < 0 )); then
+    log "default sub ${DS_LANG}${DS_KW:+ + \"$DS_KW\"}: no match, every subtitle default cleared"
+  fi
+  if [[ "$SUBMODE" == "burn" ]]; then
+    log "default sub in burn mode: subtitles are burned into the video and always on, plex-tracks must be run with --subtitle none"
+  fi
+  if [[ "$SUBMODE" == "none" ]]; then
+    log "default sub in sub-mode none: no subtitle stream is in the output, nothing to mark; plex-tracks must be run with --subtitle none"
+  fi
+fi
+[[ ${#DISP[@]} -gt 0 ]] && FF+=("${DISP[@]}")
+
 # One ffmpeg invocation, matroska, -avoid_negative_ts make_zero: 'make_window'
 # is not a valid constant and the output file fails to open. (traps.md #1)
 FF+=(-f matroska -avoid_negative_ts make_zero "$OUT_WIN")
@@ -536,6 +675,27 @@ if [[ "$SUBOUT" != "$EXP_SUBS" ]]; then
   FAIL="$FAIL subtitle streams $SUBOUT expected $EXP_SUBS"
 fi
 
+# Default flags are part of the plan: the chosen stream must have default=1, every
+# other stream of that type default=0. In jq the number 0 is truthy, so the
+# printed value is compared as a string, never by truthiness. (references/traps.md)
+SUBSEL='[.streams[] | select(.codec_type=="subtitle")]'
+if (( DA_SET )); then
+  for ((i = 0; i < ${#EXP_A[@]}; i++)); do
+    want=0
+    (( i == DAPOS )) && want=1
+    got="$(jqf "$OUT_JSON" "$ASEL | .[$i].disposition.default // empty")"
+    [[ "$got" == "$want" ]] || FAIL="$FAIL audio stream $i default '$got' expected $want"
+  done
+fi
+if (( DS_SET )); then
+  for ((i = 0; i < POSS; i++)); do
+    want=0
+    (( i == DSPOS )) && want=1
+    got="$(jqf "$OUT_JSON" "$SUBSEL | .[$i].disposition.default // empty")"
+    [[ "$got" == "$want" ]] || FAIL="$FAIL subtitle stream $i default '$got' expected $want"
+  done
+fi
+
 if [[ -n "$FAIL" ]]; then
   rm -f "$OUT"
   printf 'convert: VERIFY FAILED:%s\n' "$FAIL" >&2
@@ -548,6 +708,12 @@ SIZE="$(stat -c%s "$OUT" 2>/dev/null || printf '0')"
 V0="$(jqf "$OUT_JSON" "$VSEL | .[0].codec_name // empty")"
 A0="$(jqf "$OUT_JSON" "$ASEL | .[0].codec_name // empty")"
 log "verified: video ${V0:-none} ${#EXP_V[@]} stream(s), audio ${A0:-none} ${#EXP_A[@]} stream(s), subs $SUBOUT, duration ${D2:-?}s (source ${D1:-?}s)"
+if (( DA_SET )); then
+  if (( DAPOS >= 0 )); then log "default audio flag: position $DAPOS of ${#EXP_A[@]}"; else log "default audio flag: none set (no match for lang=${DA_LANG}${DA_KW:+ keyword=$DA_KW})"; fi
+fi
+if (( DS_SET )); then
+  if (( DSPOS >= 0 )); then log "default sub flag: position $DSPOS of $POSS"; else log "default sub flag: none set (${DS_LANG})"; fi
+fi
 log "output: $OUT, $SIZE bytes, ${SPEED:-encode time not reported}"
 printf 'convert: DONE %s\n' "$OUT"
 exit 0
